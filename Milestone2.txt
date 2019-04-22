@@ -1,0 +1,55 @@
+
+CS449 Spring 2019
+Milestone 2 Spec: Multicore shared memory implementation
+
+
+Deadline: May 20, 2019, 14:15.
+
+
+In this milestone, we ask you to adapt asynchronous hogwild-python to make it more faithful to the original Hogwild! system from the paper
+
+Feng Niu, Benjamin Recht, Christopher Ré and Stephen J. Wright. HOGWILD!: A Lock-Free Approach to Parallelizing Stochastic Gradient Descent.
+https://arxiv.org/abs/1106.5730
+
+That is, your system should exploit the multicore processing capability of modern servers   by running the algorithm in parallel in multiple threads or processes, and it should use unprotected shared memory to concurrently modify a common representation of the weights vector. That is, as in Hogwild!, your implementation should allow the parallel threads or processes to directly write in the shared memory, without message passing and without a mechanism to give a unique thread exclusive access to the memory at any one point in time.
+
+Make sure that your system performs well -- i.e., is reasonably efficient and does still solve the desired learning problem.
+
+
+
+Important: The standard Python implementation does not support thread-based multicore processing — due to a limitation known as the Global Interpreter Lock (GIL), Python threads from the same process will never run in parallel.
+Consequently, if you chose to use Python, you must use another implementation strategy that truly enables multicore processing. For example, you can:
+
+- use the `multiprocessing` library and its `RawArray`  data structure, which can be shared with child processes created with `multiprocessing.Process`;
+- use an alternative Python implementation (such as Jython) which supports true thread-level multicore processing.
+
+
+So you can start from the provided Python implementation (hogwild-python) that was also used in Milestone 1 and adapt it to this new architecture.
+
+Alternatively, you can build the system from scratch. If you choose to do this, you
+are free to use any language (Scala, Java, C++, ...) with support for shared-memory parallel computation, so that each worker thread or process can concurrently modify a single vector of values representing the current weights, as in the original Hogwild! design. Again, you must make sure that, faithfully to the Hogwild! idea, no locking is required to modify the shared vector representation, as that would incur significant performance overhead.
+
+
+Even though we mention the option of implementing your system in a different programming language and from scratch, using python and starting from hogwild-python will not be penalized. But make sure your solution satisfies the specification.
+
+
+
+For the report, you are expected to describe your implementation choices, similar to what you did in Milestone 1.
+
+In addition, you must run intelligently chosen experiments comparing your implementation with the `local` mode of Hogwild-Python from last year, either on your own machine or on a single Kubernetes pod. 
+
+Moreover, we also ask you to compare your new system with a slightly modified version that does use locks (to prevent potentially-conflicting updates to the weight vector), and to empirically verify that the absence of locks really helps performance without compromising the overall correctness of the algorithm.
+
+Do not forget to experiment with different numbers of concurrent workers/threads, in each approach. Ensure that the experiments are stable and reproducible.
+You should discuss your experiment design and your findings, explaining the observed differences in performance characteristics.
+
+
+
+Deliverables, to be uploaded to moodle by the deadline:
+
+- The report
+- All relevant source code you used to run the experiments
+
+Each team will have a 15-20 minute meeting with a TA after the deadline.
+All team members will have to attend the meeting and answer questions on the project. All team members will need to be able to answer any question -- splitting up the work among team members is of course encouraged, but you have to understand and be able to explain what your colleagues in your team did.
+
