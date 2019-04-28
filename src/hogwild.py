@@ -23,8 +23,9 @@ def fit_then_dump(model, data, nb_epoch, nb_process):
     # Create and launch the processes
     print(f'Starting {nb_process} sub processes')
     processes = [Process(target=model.fit, args=(
-        data.training_set[start:end], data.validation_set, nb_epoch, ))
-        for start, end in get_splits(len(data.training_set), nb_process)]
+        data.training_samples[start:end], data.training_labels[start:end],
+        data.validation_samples, data.validation_labels, nb_epoch, ))
+        for start, end in get_splits(data.training_samples.shape[0], nb_process)]
     start_time = time()
     for p in processes:
         p.start()
@@ -42,14 +43,17 @@ def fit_then_dump(model, data, nb_epoch, nb_process):
     print('Done with the sub processes')
 
     # Compute end results
-    training_accuracy = model.accuracy(data.training_set)
-    validation_accuracy = model.accuracy(data.validation_set)
-    valdiation_loss = model.loss(data.validation_set)
-    test_accuracy = model.accuracy(data.test_set)
+    training_accuracy = model.accuracy(
+        data.training_samples, data.training_labels)
+    validation_accuracy = model.accuracy(
+        data.validation_samples, data.validation_labels)
+    valdiation_loss = model.loss(
+        data.validation_samples, data.validation_labels)
+    test_accuracy = model.accuracy(*data.test_set)
 
     # Print results to user
     print(f'Nb epoch per worker (max) : {nb_epoch}, Elapsed time : {end_time - start_time:.1f} sec')
-    print(f'Train Accuracy : {training_accuracy:.4f}%, Validation Accuracy : {validation_accuracy:.4f}%, Test Accuracy : {test_accuracy:.4f}%')
+    print(f'Train Accuracy : {training_accuracy:.4f}%, Validation Accuracy : {validation_accuracy:.4f}% , Test Accuracy : {test_accuracy:.4f}%')
     # Save results in a log
     log = [{'start_time': datetime.utcfromtimestamp(start_time).strftime("%Y-%m-%d %H:%M:%S"),
             'end_time': datetime.utcfromtimestamp(end_time).strftime("%Y-%m-%d %H:%M:%S"),
@@ -66,28 +70,31 @@ def fit_then_dump(model, data, nb_epoch, nb_process):
     with open(path.join(s.logpath, logname), 'w') as outfile:
         json.dump(log, outfile)
 
-    return training_accuracy, validation_accuracy, valdiation_loss
+    return training_accuracy, validation_accuracy, valdiation_loss, test_accuracy
 
-# def grid_search(data, learning_rates, lambdas, batch_fracs):
-#     values = [(
-#         'learning_rate',
-#         'lambda_reg',
-#         'frac',
-#         'training_accuracy',
-#         'validation_accuracy',
-#         'validation_loss'
-#     )]
-#     for learning_rate in learning_rates:
-#         for lambda_reg in lambdas:
-#             for frac in batch_fracs:
-#                 training_accuracy, validation_accuracy, valdiation_loss = fit_then_dump(
-#                     data, learning_rate, lambda_reg, frac, niter=100)
-#                 values.append((learning_rate, lambda_reg, frac,
-#                                training_accuracy, validation_accuracy, valdiation_loss))
 
-#     with open(path.join(s.logpath, datetime.utcfromtimestamp(time()).strftime("%Y%m%d_%H%M%S") + '_grid_search_results.csv'), 'w') as f:
-#         writer = csv.writer(f)
-#         writer.writerows(values)
+def grid_search(data, learning_rates, lambdas, batch_sizes):
+    values = [(
+        'learning_rate',
+        'lambda_reg',
+        'batch_size',
+        'training_accuracy',
+        'validation_accuracy',
+        'validation_loss',
+        'test_accuracy'
+    )]
+    for learning_rate in learning_rates:
+        for lambda_reg in lambdas:
+            for bsize in batch_sizes:
+                model = SVM(learning_rate, lambda_reg, bsize, s.dim)
+                training_accuracy, validation_accuracy, valdiation_loss, test_accuracy = fit_then_dump(
+                    model, data, 100, int(cpu_count()))
+                values.append((learning_rate, lambda_reg, bsize,
+                               training_accuracy, validation_accuracy, valdiation_loss, test_accuracy))
+
+    with open(path.join(s.logpath, datetime.utcfromtimestamp(time()).strftime("%Y%m%d_%H%M%S") + '_grid_search_results.csv'), 'w') as f:
+        writer = csv.writer(f)
+        writer.writerows(values)
 
 
 if __name__ == "__main__":
@@ -103,12 +110,29 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     data = DataLoader()
-    model = SVM(s.learning_rate, s.lambda_reg,
-                s.batch_size, s.dim, lock=args.lock)
-    fit_then_dump(model, data, args.niter, args.process)
+    # workers = [1, 2, 4, 8]
+    # bsizes = [1, 10, 100, 500, 1000]
+    # for w in workers:
+    #     model = SVM(s.learning_rate, s.lambda_reg,
+    #                 s.batch_size, s.dim, lock=args.lock)
+    #     fit_then_dump(model, data, args.niter, w)
+    #     data.shuffle_train_val_data()
 
-    # learning_rates = [0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.05]
-    # batch_fracs = [0.005, 0.01, 0.02]
-    # lambdas = [1e-6, 1e-5, 1e-4, 1e-3]
-    # for i in range(4):
-    #     grid_search(data, learning_rates, lambdas, batch_fracs)
+    # for bsize in bsizes:
+    #     lr = s.learning_rate * 100 / bsize
+    #     model = SVM(lr, s.lambda_reg,
+    #                 s.batch_size, s.dim, lock=args.lock)
+    #     fit_then_dump(model, data, args.niter, args.process)
+    #     data.shuffle_train_val_data()
+
+    if not args.gridsearch:
+        model = SVM(s.learning_rate, s.lambda_reg,
+                    s.batch_size, s.dim, lock=args.lock)
+        fit_then_dump(model, data, args.niter, args.process)
+    else:
+        learning_rates = [0.01, 0.02, 0.025, 0.03, 0.035, 0.04, 0.05, 0.08]
+        batch_sizes = [100]
+        lambdas = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2]
+        for i in range(3):
+            grid_search(data, learning_rates, lambdas, batch_sizes)
+            data.shuffle_train_val_data()
