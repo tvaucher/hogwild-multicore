@@ -3,7 +3,7 @@ from functools import wraps
 from os import path
 
 import numpy as np
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, vstack
 
 import settings as s
 
@@ -32,26 +32,32 @@ def line_to_features(r, cat):
     label = 1 if int(r[0]) in cat else -1
     return (csr_matrix((data, (row_idx, col_idx)), shape=(1, s.dim)), label)
 
+def transform(data):
+    return (vstack(data[:, 0]), np.concatenate(data[:, 1], axis=None))
 
 class DataLoader:
     def __init__(self, category='CCAT'):
         print('Reading the doc category and generating training and validation set')
         self.doc_category = self.read_category(category)
-        self.training_set, self.validation_set = self.read_train_val_data()
+        self.shuffle_train_val_data()
 
     def read_category(self, category='CCAT'):
         with open(path.join(s.path, 'datasets/rcv1-v2.topics.qrels')) as f:
             content = [l.strip().split(' ') for l in f.readlines()]
             return {int(l[1]) for l in content if l[0] == category}
 
+    @memoize
     def read_train_val_data(self):
         with open(path.join(s.path, 'datasets/lyrl2004_vectors_train.dat')) as f:
             content = f.readlines()
-            sets = np.asarray(
-                [line_to_features(l, self.doc_category) for l in content])
-            indices = np.random.permutation(len(sets))
-            separater = int(np.floor(s.validation_frac * len(sets)))
-            return sets[indices[separater:]], sets[indices[:separater]]
+            return np.array([line_to_features(l, self.doc_category) for l in content])
+
+    def shuffle_train_val_data(self):
+        sets = self.read_train_val_data()
+        indices = np.random.permutation(len(sets))
+        separater = int(np.floor(s.validation_frac * len(sets)))
+        self.training_samples, self.training_labels = transform(sets[indices[separater:]])
+        self.validation_samples, self.validation_labels = transform(sets[indices[:separater]])        
 
     @property
     @memoize
@@ -61,4 +67,4 @@ class DataLoader:
         for i in range(4):
             with open(path.join(s.path, 'datasets/lyrl2004_vectors_test_pt'+str(i)+'.dat')) as f:
                 content += f.readlines()
-        return np.asarray([line_to_features(l, self.doc_category) for l in content])
+        return transform(np.array([line_to_features(l, self.doc_category) for l in content]))
