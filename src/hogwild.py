@@ -19,12 +19,12 @@ def get_splits(size, nb_process):
     return zip(splits, splits[1:])
 
 
-def fit_then_dump(model, data, nb_epoch, nb_process):
+def fit_then_dump(model, data, nb_epoch, nb_process, notest=False, verbose=False):
     # Create and launch the processes
     print(f'Starting {nb_process} sub processes')
     processes = [Process(target=model.fit, args=(
         data.training_samples[start:end], data.training_labels[start:end],
-        data.validation_samples, data.validation_labels, nb_epoch, ))
+        data.validation_samples, data.validation_labels, nb_epoch, verbose))
         for start, end in get_splits(data.training_samples.shape[0], nb_process)]
     start_time = time()
     for p in processes:
@@ -49,8 +49,8 @@ def fit_then_dump(model, data, nb_epoch, nb_process):
         data.validation_samples, data.validation_labels)
     valdiation_loss = model.loss(
         data.validation_samples, data.validation_labels)
-    test_accuracy = model.accuracy(*data.test_set)
-
+    test_accuracy = model.accuracy(*data.test_set) if not notest else 0
+    
     # Print results to user
     print(f'Nb epoch per worker (max) : {nb_epoch}, Elapsed time : {end_time - start_time:.1f} sec')
     print(f'Train Accuracy : {training_accuracy:.4f}%, Validation Accuracy : {validation_accuracy:.4f}% , Test Accuracy : {test_accuracy:.4f}%')
@@ -107,6 +107,8 @@ if __name__ == "__main__":
                         type=int, default=int(cpu_count()))
     parser.add_argument(
         '--gridsearch', help='Perfom a grid search over the hyperparameters', action='store_true')
+    parser.add_argument('--notest', help='Doesn\'t load and compute the test set / accuracy', action='store_true')
+    parser.add_argument('-v', '--verbose', help='Print the intermediate train / val loss at each iteration', action='store_true')
     args = parser.parse_args()
 
     data = DataLoader()
@@ -128,7 +130,7 @@ if __name__ == "__main__":
     if not args.gridsearch:
         model = SVM(s.learning_rate, s.lambda_reg,
                     s.batch_size, s.dim, lock=args.lock)
-        fit_then_dump(model, data, args.niter, args.process)
+        fit_then_dump(model, data, args.niter, args.process, notest=args.notest, verbose=args.verbose)
     else:
         learning_rates = [0.01, 0.02, 0.025, 0.03, 0.035, 0.04, 0.05, 0.08]
         batch_sizes = [100]

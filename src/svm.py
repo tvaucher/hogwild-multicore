@@ -24,7 +24,7 @@ class SVM:
         w = self.__w._obj if self.__lock else self.__w
         return np.frombuffer(w)
 
-    def fit(self, train_samples, train_labels, val_samples, val_labels, max_iter):
+    def fit(self, train_samples, train_labels, val_samples, val_labels, max_iter, verbose=False):
         ''' Fit the model over the data using train - validation separation over at max_iter iteration'''
         # Housekeeping and initialization
         early_stopping_window = []
@@ -44,7 +44,8 @@ class SVM:
 
             # Logging
             validation_loss = self.loss(val_samples, val_labels, w=w)
-            # print(f'worker {pid}, iter {i}, train loss : {train_loss}, val loss : {validation_loss}')
+            if verbose: 
+                print(f'worker {pid}, iter {i}, train loss : {train_loss}, val loss : {validation_loss}')
             log_iter = {'iter': i, 'time': time() - start_time, 'avg_train_loss': train_loss,
                         'validation_loss': validation_loss}
             log.append(log_iter)
@@ -54,7 +55,8 @@ class SVM:
                 early_stopping_window = early_stopping_window[1:]
                 early_stopping_window.append(validation_loss)
                 if(min(early_stopping_window) > window_smallest):
-                    print(f'woker {pid} has stopped early {i}')
+                    if verbose:
+                        print(f'woker {pid} has stopped early {i}')
                     log.append({'early_stop': True})
                     break
                 window_smallest = min(early_stopping_window)
