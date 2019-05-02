@@ -1,21 +1,28 @@
 import argparse
 import csv
+import math
 import json
 from datetime import datetime
 from multiprocessing import Process, cpu_count
 from os import path
 from time import time
 
-import numpy as np
-
 import settings as s
 from load_data import DataLoader
 from svm import SVM
 
+def linspace(size, nb_process):
+    ''' generator to create a linear space from 0 to `size` of len `nb_process` '''
+    start = 0
+    step = math.ceil(size/nb_process)
+    while start < size:
+        yield start
+        start += step
+    yield size
 
 def get_splits(size, nb_process):
     '''Generate the splits for an array of `size` over `nb_process`'''
-    splits = np.linspace(0, size, num=(nb_process + 1), dtype=np.uint)
+    splits = list(linspace(size, nb_process))
     return zip(splits, splits[1:])
 
 
@@ -23,9 +30,8 @@ def fit_then_dump(model, data, nb_epoch, nb_process, notest=False, verbose=False
     # Create and launch the processes
     print(f'Starting {nb_process} sub processes')
     processes = [Process(target=model.fit, args=(
-        data.training_samples[start:end], data.training_labels[start:end],
-        data.validation_samples, data.validation_labels, nb_epoch, verbose))
-        for start, end in get_splits(data.training_samples.shape[0], nb_process)]
+        data.training_set[start:end], data.validation_set, nb_epoch, verbose))
+        for start, end in get_splits(len(data.training_set), nb_process)]
     start_time = time()
     for p in processes:
         p.start()
@@ -43,13 +49,10 @@ def fit_then_dump(model, data, nb_epoch, nb_process, notest=False, verbose=False
     print('Done with the sub processes')
 
     # Compute end results
-    training_accuracy = model.accuracy(
-        data.training_samples, data.training_labels)
-    validation_accuracy = model.accuracy(
-        data.validation_samples, data.validation_labels)
-    valdiation_loss = model.loss(
-        data.validation_samples, data.validation_labels)
-    test_accuracy = model.accuracy(*data.test_set) if not notest else 0
+    training_accuracy = model.accuracy(data.training_set)
+    validation_accuracy = model.accuracy(data.validation_set)
+    valdiation_loss = model.loss(data.validation_set)
+    test_accuracy = model.accuracy(data.test_set) if not notest else 0
     
     # Print results to user
     print(f'Nb epoch per worker (max) : {nb_epoch}, Elapsed time : {end_time - start_time:.1f} sec')
@@ -88,7 +91,7 @@ def grid_search(data, learning_rates, lambdas, batch_sizes):
             for bsize in batch_sizes:
                 model = SVM(learning_rate, lambda_reg, bsize, s.dim)
                 training_accuracy, validation_accuracy, valdiation_loss, test_accuracy = fit_then_dump(
-                    model, data, 100, int(cpu_count()))
+                    model, data, 100, cpu_count())
                 values.append((learning_rate, lambda_reg, bsize,
                                training_accuracy, validation_accuracy, valdiation_loss, test_accuracy))
 
@@ -128,7 +131,8 @@ if __name__ == "__main__":
     #     data.shuffle_train_val_data()
 
     if not args.gridsearch:
-        model = SVM(s.learning_rate, s.lambda_reg,
+        lr = s.learning_rate / args.process if args.lock else s.learning_rate
+        model = SVM(lr, s.lambda_reg,
                     s.batch_size, s.dim, lock=args.lock)
         fit_then_dump(model, data, args.niter, args.process, notest=args.notest, verbose=args.verbose)
     else:

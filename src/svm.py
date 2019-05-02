@@ -1,12 +1,16 @@
+import math
 import os
 import random
-from ctypes import c_double
+from array import array
+from collections import defaultdict
+from ctypes import c_float
+from functools import reduce
 from multiprocessing import Queue
 from multiprocessing.sharedctypes import Array
+from operator import add
 from time import time
 
-import numpy as np
-from scipy.sparse import csr_matrix
+from utils import add_dict, dot, sign
 
 
 class SVM:
@@ -17,18 +21,18 @@ class SVM:
         self.__dim = dim
         self.__persistence = 30
         self.__lock = lock
-        self.__w = Array(c_double, dim, lock=lock)
+        self.__w = Array(c_float, dim, lock=lock)
         self.__log = Queue()
 
     def __weights(self):
-        w = self.__w._obj if self.__lock else self.__w
-        return np.frombuffer(w)
+        w = array('f', self.__w) if self.__lock else self.__w
+        return w
 
-    def fit(self, train_samples, train_labels, val_samples, val_labels, max_iter, verbose=False):
+    def fit(self, train_set, val_set, max_iter, verbose=False):
         ''' Fit the model over the data using train - validation separation over at max_iter iteration'''
         # Housekeeping and initialization
         early_stopping_window = []
-        window_smallest = np.inf
+        window_smallest = math.inf
         log = []
         w = self.__weights()
         start_time = time()
@@ -36,14 +40,15 @@ class SVM:
         # SGD
         for i in range(max_iter):
             # Update step
-            mini_batch = random.sample(range(train_labels.shape[0]), self.__batch_size)
-            grad, train_loss = self.step(train_samples[mini_batch], train_labels[mini_batch], w)
-            for idx in grad.nonzero()[1]:  # update step
-                self.__w[idx] += self.__learning_rate * grad[0, idx]
+            mini_batch = random.sample(
+                range(len(train_set)), self.__batch_size)
+            grad, train_loss = self.step(train_set, mini_batch, w)
+            for idx, value in grad.items():  # update step
+                self.__w[idx] += self.__learning_rate * value
             w = self.__weights()
 
             # Logging
-            validation_loss = self.loss(val_samples, val_labels, w=w)
+            validation_loss = self.loss(val_set, w=w)
             if verbose: 
                 print(f'worker {pid}, iter {i}, train loss : {train_loss}, val loss : {validation_loss}')
             log_iter = {'iter': i, 'time': time() - start_time, 'avg_train_loss': train_loss,
@@ -65,59 +70,68 @@ class SVM:
 
         self.__log.put((pid, log))
 
-    def step(self, data, labels, w):
+    def step(self, data, minibatch, w):
         ''' Calculates the gradient and train loss. Add regularizer to the train loss '''
-        xw = data.dot(w)
-        mask = self.misclassification(xw, labels)
-        hinge_grad = self.grad_hinge(data, labels, mask)
-        l2_grad = self.l2_reg_grad(w, data)
-        grad = (hinge_grad - l2_grad).sum(0)
+        gradient, train_loss = reduce(lambda x, y: (add_dict(x[0], y[0]), x[1] + y[1]),
+                                      map(lambda x: self.calculate_grad_loss(x[0], x[1], w),
+                                          (data[i] for i in minibatch)),
+                                      (defaultdict(float), 0))
+        train_loss /= len(minibatch)
 
-        train_loss = self.loss(data, labels, xw=xw, w=w, mask=mask)
+        return gradient, train_loss
 
-        return grad, train_loss
+    def calculate_grad_loss(self, x, label, w):
+        ''' Helper for step, computes the hinge loss and gradient of a single point '''
+        xw = dot(x, w)
+        if self.misclassification(xw, label):
+            delta_w = self.gradient(x, label, w)
+        else:
+            delta_w = self.l2_reg_grad(w, x)
+        return delta_w, self.loss_point(x, label, xw=xw, w=w)
 
-    def loss(self, data, label, xw=None, w=None, mask=None):
-        ''' Computes the avg loss (incl regulizer) for a data set'''
+    def loss_point(self, x, label, xw=None, w=None):
+        ''' Computes the loss of a single point'''
+        if xw is None:
+            xw = dot(x, w)
+        return self.hinge(xw, label) + self.l2_reg(w, x)
+
+    def loss(self, data, w=None):
+        ''' Computes the avg loss (incl regulizer) for a data set '''
         if w is None:
             w = self.__weights()
-        if xw is None:
-            xw = data.dot(w)
-        if mask is None:
-            mask = self.misclassification(xw, label)
-        hinge_loss = ((1 - xw * label) * mask).sum()
-        return (hinge_loss + self.l2_reg(w, data))/data.shape[0]
+        return reduce(add, map(lambda x: self.loss_point(x[0], x[1], w=w), data))/len(data)
 
-    def l2_reg(self, w, data):
+    def l2_reg(self, w, x):
         ''' Returns the regularization term '''
-        mask = csr_matrix((np.ones(data.nnz), data.indices,
-                           data.indptr), shape=data.shape)
-        l2 = mask.multiply(w).power(2).sum(1)/mask.getnnz(1).reshape(-1, 1)
-        return self.__lambda_reg * l2.sum()
+        return self.__lambda_reg * sum([w[i] ** 2 for i in x.keys()]) / len(x)
 
-    def l2_reg_grad(self, w, data):
+    def l2_reg_grad(self, w, x):
         '''Returns the gradient of the regularization term  '''
-        mask = csr_matrix((np.ones(data.nnz), data.indices,
-                           data.indptr), shape=data.shape)
-        return 2 * self.__lambda_reg * mask.multiply(w).multiply(1/mask.getnnz(1).reshape(-1, 1))
+        return {k: -2 * self.__lambda_reg * w[k] / len(x) for k in x.keys()}
 
-    def grad_hinge(self, data, labels, mask):
-        ''' Compute minus the gradient of hinge loss (only apply when x dot w * label < 1 (mask))'''
-        return data.multiply(labels.reshape(-1, 1)).multiply(mask.reshape(-1, 1))
+    def hinge(self, xw, label):
+        ''' Compute the hinge loss for a dot product and a label '''
+        return max(1 - label * xw, 0)
+
+    def hinge_grad(self, x, label):
+        ''' Compute minus the gradient of hinge loss (only apply when x dot w * label < 1)'''
+        return {k: (v * label) for k, v in x.items()}
+
+    def gradient(self, x, label, w):
+        hinge_grad = self.hinge_grad(x, label)
+        l2_reg_grad = self.l2_reg_grad(w, x)
+        return {k: hinge + l2 for (k, hinge), l2 in
+                zip(hinge_grad.items(), l2_reg_grad.values())}
 
     def misclassification(self, x_dot_w, label):
         ''' Returns true if, for a given point, its hingeloss would be > 0. '''
         return x_dot_w * label < 1
 
-    def predict(self, data, w):
-        ''' Predict the label of the input data '''
-        return np.sign(data.dot(w))
-
-    def accuracy(self, data, labels, w=None):
+    def accuracy(self, data, w=None):
         ''' Compute the accuracy of the model over a data set of (samples, label) '''
         if w is None:
             w = self.__weights()
-        return (self.predict(data, w) == labels).sum()/data.shape[0]
+        return sum((sign(dot(x, w)) == label) for x, label in data)/len(data)
 
     def log(self):
         return self.__log.get()
