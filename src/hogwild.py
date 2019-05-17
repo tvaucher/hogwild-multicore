@@ -120,20 +120,20 @@ if __name__ == "__main__":
     # for w in workers:
     #     model = SVM(s.learning_rate, s.lambda_reg,
     #                 s.batch_size, s.dim, lock=args.lock)
-    #     fit_then_dump(model, data, args.niter, w)
+    #     fit_then_dump(model, data, args.niter, w, notest=args.notest, verbose=args.verbose)
     #     data.shuffle_train_val_data()
 
     # for bsize in bsizes:
     #     lr = s.learning_rate * 100 / bsize
     #     model = SVM(lr, s.lambda_reg,
     #                 s.batch_size, s.dim, lock=args.lock)
-    #     fit_then_dump(model, data, args.niter, args.process)
+    #     fit_then_dump(model, data, args.niter, args.process, notest=args.notest, verbose=args.verbose)
     #     data.shuffle_train_val_data()
 
     if not args.gridsearch:
-        lr = s.learning_rate / args.process if args.lock else s.learning_rate
+        lr = s.learning_rate
         model = SVM(lr, s.lambda_reg,
-                    s.batch_size, s.dim, lock=args.lock)
+                s.batch_size, s.dim, lock=args.lock)
         fit_then_dump(model, data, args.niter, args.process, notest=args.notest, verbose=args.verbose)
     else:
         learning_rates = [0.01, 0.02, 0.025, 0.03, 0.035, 0.04, 0.05, 0.08]

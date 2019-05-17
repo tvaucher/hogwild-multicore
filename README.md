@@ -4,7 +4,7 @@ Welcome to this implementation of the sparse SVM problem described in the origin
 
 ## Prerequisites and Setup
 
-We suppose that you have Anaconda installed on your computer in order to create a conda environment and that you downloaded the datasets on your machine
+We suppose that you have Anaconda installed on your computer in order to create a conda environment and that you downloaded the datasets on your machine (if you want to use the scipy version of hogwild-multicore, otherwise python 3.7 is enough)
 
 ```shell
 conda create -n hogwild-multicore python=3.7 numpy scipy
@@ -26,3 +26,5 @@ You can look at the help using `python hogwild.py -h`
 - `-l` or `--lock` Use a lock version of Lock-free Hogwild to avoid concurrent update
 - `-n` or `--niter` To select the number of iterations of SGD *default : 400*
 - `-p` or `--process` To select the number of process to run onto *default : os.cpu_count* 
+- `-v`or `--verbose` To show the train and accuracy loss at train time
+- `--notest` To run only the training step and not load the test set / compute test accuracy

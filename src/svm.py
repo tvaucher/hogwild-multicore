@@ -1,7 +1,6 @@
 import math
 import os
 import random
-from array import array
 from collections import defaultdict
 from ctypes import c_float
 from functools import reduce
@@ -25,8 +24,7 @@ class SVM:
         self.__log = Queue()
 
     def __weights(self):
-        w = array('f', self.__w) if self.__lock else self.__w
-        return w
+        return self.__w._obj if self.__lock else self.__w
 
     def fit(self, train_set, val_set, max_iter, verbose=False):
         ''' Fit the model over the data using train - validation separation over at max_iter iteration'''
@@ -45,7 +43,6 @@ class SVM:
             grad, train_loss = self.step(train_set, mini_batch, w)
             for idx, value in grad.items():  # update step
                 self.__w[idx] += self.__learning_rate * value
-            w = self.__weights()
 
             # Logging
             validation_loss = self.loss(val_set, w=w)
