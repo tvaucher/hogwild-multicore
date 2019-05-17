@@ -10,7 +10,7 @@ else:
     path = '/data'
     logpath = '/data/logs'
 dim = 47238
-learning_rate = 0.035
+learning_rate = 0.015
 lambda_reg = 1e-4
 batch_size = 100
 
